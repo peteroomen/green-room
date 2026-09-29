@@ -1,7 +1,7 @@
 {
   "name": "green-room",
   "version": "1.0.0",
-  "description": "",
+  "description": "A personal chess room with Stockfish, tool-based AI coaching, game review, puzzles and spaced practice.",
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
@@ -37,7 +37,7 @@
     "zod": "^4.6.5"
   },
   "engines": {
-    "node": ">=22"
+    "node": "24.x"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

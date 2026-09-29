@@ -1,13 +1,109 @@
-export type Provider='claude'|'openai'|'google';
-export type Page='play'|'review'|'puzzles'|'practice'|'games'|'settings';
-export type Analysis={fen:string;lines:{move:string;pv:string[];cp:number;mate?:number;depth:number}[]};
-export type ReviewMove={ply:number;san:string;loss:number;category:'best'|'good'|'inaccuracy'|'mistake'|'blunder';before:Analysis;after:Analysis};
-export type Game={id:string;title:string;initialFen:string;moves:string[];player:'w'|'b';opponent:'stockfish'|'llm'|'local';difficulty:number;provider:Provider;createdAt:number;result?:string;review?:ReviewMove[]};
-export type Message={id:string;role:'user'|'assistant';text:string;fen?:string;line?:string[]};
-export type Settings={rating:number;difficulty:number;side:'w'|'b';provider:Provider;timing:'request'|'before'|'after';frequency:'critical'|'occasional'|'every';detail:number;level:'plain'|'standard'|'advanced';analysisMs:number;showEval:boolean;dailyLimit:number};
-export type Card={id:string;fen:string;solution:string;line:string[];source:string;themes:string[];due:number;interval:number;lapses:number};
-export type Attempt={id:string;kind:'puzzle'|'card';themes:string[];success:boolean;assisted:boolean;at:number};
-export type State={version:1;games:Game[];current:string;settings:Settings;chats:Record<string,Message[]>;cards:Card[];attempts:Attempt[];usage:{date:string;calls:number;input:number;output:number}};
-export const defaults:Settings={rating:1000,difficulty:2,side:'w',provider:'claude',timing:'request',frequency:'critical',detail:1,level:'plain',analysisMs:450,showEval:false,dailyLimit:60};
-export const difficulties=[{name:'First steps',skill:0,ms:80},{name:'Friendly',skill:1,ms:120},{name:'Casual',skill:3,ms:180},{name:'Club',skill:7,ms:250},{name:'Challenging',skill:13,ms:400},{name:'Full strength',skill:20,ms:700}];
-export type Config={unlocked:boolean;passwordRequired:boolean;models:{id:Provider;name:string;ready:boolean}[]};
+export type Provider = "claude" | "openai" | "google";
+export type Page =
+  "play" | "review" | "puzzles" | "practice" | "games" | "settings";
+export type Analysis = {
+  fen: string;
+  lines: {
+    move: string;
+    pv: string[];
+    cp: number;
+    mate?: number;
+    depth: number;
+  }[];
+};
+export type ReviewMove = {
+  ply: number;
+  san: string;
+  loss: number;
+  category: "best" | "good" | "inaccuracy" | "mistake" | "blunder";
+  before: Analysis;
+  after: Analysis;
+};
+export type Game = {
+  id: string;
+  title: string;
+  initialFen: string;
+  moves: string[];
+  player: "w" | "b";
+  opponent: "stockfish" | "llm" | "local";
+  difficulty: number;
+  provider: Provider;
+  createdAt: number;
+  result?: string;
+  review?: ReviewMove[];
+};
+export type Message = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  fen?: string;
+  line?: string[];
+};
+export type Settings = {
+  rating: number;
+  difficulty: number;
+  side: "w" | "b";
+  provider: Provider;
+  timing: "request" | "before" | "after";
+  frequency: "critical" | "occasional" | "every";
+  detail: number;
+  level: "plain" | "standard" | "advanced";
+  analysisMs: number;
+  showEval: boolean;
+  dailyLimit: number;
+};
+export type Card = {
+  id: string;
+  fen: string;
+  solution: string;
+  line: string[];
+  source: string;
+  themes: string[];
+  due: number;
+  interval: number;
+  lapses: number;
+};
+export type Attempt = {
+  id: string;
+  kind: "puzzle" | "card";
+  themes: string[];
+  success: boolean;
+  assisted: boolean;
+  at: number;
+};
+export type State = {
+  version: 1;
+  games: Game[];
+  current: string;
+  settings: Settings;
+  chats: Record<string, Message[]>;
+  cards: Card[];
+  attempts: Attempt[];
+  usage: { date: string; calls: number; input: number; output: number };
+};
+export const defaults: Settings = {
+  rating: 1000,
+  difficulty: 2,
+  side: "w",
+  provider: "claude",
+  timing: "request",
+  frequency: "critical",
+  detail: 1,
+  level: "plain",
+  analysisMs: 450,
+  showEval: false,
+  dailyLimit: 60,
+};
+export const difficulties = [
+  { name: "First steps", skill: 0, ms: 80 },
+  { name: "Friendly", skill: 1, ms: 120 },
+  { name: "Casual", skill: 3, ms: 180 },
+  { name: "Club", skill: 7, ms: 250 },
+  { name: "Challenging", skill: 13, ms: 400 },
+  { name: "Full strength", skill: 20, ms: 700 },
+];
+export type Config = {
+  unlocked: boolean;
+  passwordRequired: boolean;
+  models: { id: Provider; name: string; ready: boolean }[];
+};

@@ -1,0 +1,5 @@
+.git
+node_modules
+dist
+tests
+public/qa-mobile.html

@@ -1,26 +1,666 @@
-import {useState,useMemo,type Dispatch,type SetStateAction} from 'react';
-import {toast} from 'sonner';
-import {Leaf,ArrowRight,Lightbulb,RotateCcw,Play,BookOpen,Target,Check,ChevronLeft,ChevronRight} from 'lucide-react';
-import {Board} from './Board';
-import {Button} from './ui/button';
-import {Tabs,TabsContent,TabsList,TabsTrigger} from './ui/tabs';
-import {Choice,Empty,IconButton} from './common';
-import {board,Chess,DEFAULT_POSITION,move,newGame,sanLine,uid} from '@/lib/chess';
-import {schedule} from '@/lib/storage';
-import type {Card,Page,State} from '@/lib/types';
-import puzzles from '@/data/puzzles.json';
-import {openings,endings} from '@/data/drills';
-type Props={state:State;setState:Dispatch<SetStateAction<State>>;onPage:(p:Page)=>void};
-function playPosition(fen:string,props:Props){const g=newGame({...props.state.settings,side:new Chess(fen).turn()},'stockfish',fen);g.title='Practice from a position';props.setState(s=>({...s,current:g.id,games:[g,...s.games]}));props.onPage('play');}
-const themeLabel=(s:string)=>s.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase());
-export function Puzzles(props:Props){const {state}=props;const [theme,setTheme]=useState('all');const [difficulty,setDifficulty]=useState('level');const [index,setIndex]=useState(0);const pool=useMemo(()=>puzzles.filter(p=>(theme==='all'||p.themes.includes(theme))&&(difficulty==='all'||Math.abs(p.rating-state.settings.rating)<=300)),[theme,difficulty,state.settings.rating]);const puzzle=pool[index%Math.max(pool.length,1)];const themes=[...new Set(puzzles.flatMap(p=>p.themes))].sort();return <><div className="page-heading"><div><div className="eyebrow">A SMALL CHALLENGE, A SHARPER EYE</div><h1>Find the idea.</h1><p>No clock. Just you, the position, and a little curiosity.</p></div><span className="stat-pill"><Target size={17}/>{state.attempts.filter(a=>a.kind==='puzzle'&&a.success&&!a.assisted).length} solved unaided</span></div><div className="filters"><Choice label="Focus" value={theme} onChange={v=>{setTheme(v);setIndex(0)}} options={[{value:'all',label:'All themes'},...themes.map(t=>({value:t,label:themeLabel(t)}))]}/><Choice label="Difficulty" value={difficulty} onChange={v=>{setDifficulty(v);setIndex(0)}} options={[{value:'level',label:`Around your level (${state.settings.rating})`},{value:'all',label:'All levels · 600–1800'}]}/><span className="muted">{pool.length} positions</span></div>{puzzle?<PuzzleSession key={puzzle.id} puzzle={puzzle} next={()=>setIndex(i=>i+1)} {...props}/>:<Empty title="No positions in this selection" icon={<Target/>}>Try all levels or another theme.</Empty>}</>}
-function PuzzleSession({puzzle,next,...props}:Props&{puzzle:typeof puzzles[number];next:()=>void}){const start=board({initialFen:puzzle.fen,moves:[puzzle.moves[0]]});const [played,setPlayed]=useState<string[]>([]);const [hint,setHint]=useState(0);const [assisted,setAssisted]=useState(false);const [recorded,setRecorded]=useState(false);const [revealed,setRevealed]=useState(false);const [feedback,setFeedback]=useState('Find the strongest continuation. Look for forcing moves.');const line=puzzle.moves.slice(1);const b=board({initialFen:start.fen(),moves:played});const done=played.length>=line.length;function record(success:boolean,help=assisted){if(recorded)return;setRecorded(true);props.setState(s=>({...s,attempts:[...s.attempts,{id:puzzle.id,kind:'puzzle',themes:puzzle.themes,success,assisted:help,at:Date.now()}]}));}
- function attempt(m:string){if(done||revealed)return;if(m!==line[played.length]){setAssisted(true);setFeedback('That is not the puzzle continuation. Look for something more forcing.');return;}const nextMoves=[...played,m];if(nextMoves.length<line.length)nextMoves.push(line[nextMoves.length]);setPlayed(nextMoves);setHint(0);setFeedback(nextMoves.length>=line.length?'You found the full continuation. Keep the pattern, not just the move.':'Good. Your opponent has replied. Keep the idea going.');if(nextMoves.length>=line.length)record(true);}
- const wanted=line[played.length];const piece=wanted?b.get(wanted.slice(0,2) as never):null;const hints=['What checks, captures, or threats can you find?',`Look at the piece on ${wanted?.slice(0,2)}. Can it make a forcing move?`,`Consider ${wanted?sanLine(b.fen(),[wanted])[0]:''}. Work out your opponent’s reply.`];return <div className="training-layout"><section><div className="player-bar"><div className="avatar"><Target/></div><div><strong>{start.turn()==='w'?'White':'Black'} to move</strong><span>Puzzle {puzzle.id}</span></div><span className="pill">Take your time</span></div><Board fen={b.fen()} orientation={start.turn()} onMove={attempt} disabled={done||revealed} lastMove={played.at(-1)}/><div className="source-row"><span>Position from a real game</span><a href={puzzle.url} target="_blank" rel="noreferrer">View source ↗</a></div></section><aside className="training-panel"><div className="eyebrow">{done?'IDEA FOUND':`RATED ${puzzle.rating}`}</div><h2>{done?'That’s the move.':'Pause. Look. Calculate.'}</h2><p>{feedback}</p>{hint>0&&!done&&<div className="hint-box"><Lightbulb size={19}/><p>{hints[hint-1]}</p></div>}{(done||revealed)&&<><div className="tags">{puzzle.themes.map(t=><span key={t}>{themeLabel(t)}</span>)}</div><div className="solution">{sanLine(start.fen(),line).join(' → ')}</div></>}{!done&&!revealed?<><Button variant="secondary" onClick={()=>{setHint(h=>Math.min(3,h+1));setAssisted(true)}} disabled={hint===3}><Lightbulb/>A gentle hint</Button><Button variant="ghost" onClick={()=>{setAssisted(true);setRevealed(true);record(false,true);setFeedback('Explore the solution, then replay the puzzle to practise the idea.')}}>Show solution</Button></>:<><Button onClick={next}>Next puzzle<ArrowRight/></Button><Button variant="secondary" onClick={()=>playPosition(start.fen(),props)}><Play/>Play from here</Button><Button variant="ghost" onClick={()=>{setPlayed([]);setHint(0);setRevealed(false);setAssisted(true);setFeedback('Try finding the continuation again.')}}><RotateCcw/>Replay puzzle</Button></>}<div className="training-bottom"><span>No clock. Take the time you need.</span><Button variant="ghost" onClick={next}>Skip position<ArrowRight/></Button></div></aside></div>}
-export function Practice(props:Props){const {state,setState}=props;const [active,setActive]=useState<Card|null>(null);const [opening,setOpening]=useState<number|null>(null);const [step,setStep]=useState(0);const due=state.cards.filter(c=>c.due<=Date.now());const stats=new Map<string,{total:number;missed:number}>();for(const a of state.attempts)for(const t of a.themes){const v=stats.get(t)||{total:0,missed:0};v.total++;if(!a.success||a.assisted)v.missed++;stats.set(t,v);}const weaknesses=[...stats].filter(([,v])=>v.missed).sort((a,b)=>b[1].missed-a[1].missed).slice(0,5);
- if(active)return <CardSession key={active.id} card={active} {...props} onDone={()=>setActive(null)}/>;
- if(opening!==null){const o=openings[opening];const b=board({initialFen:DEFAULT_POSITION,moves:o.line.slice(0,step)});return <><div className="page-heading"><div><div className="eyebrow">{o.tag}</div><h1>{o.name}</h1><p>{o.idea}</p></div><Button variant="secondary" onClick={()=>setOpening(null)}>Back to practice</Button></div><div className="training-layout"><section><Board fen={b.fen()} onMove={()=>{}} disabled orientation={opening===2?'b':'w'} lastMove={o.line[step-1]}/><div className="opening-nav"><IconButton label="Previous opening move" disabled={!step} onClick={()=>setStep(step-1)}><ChevronLeft/></IconButton><span>{step} / {o.line.length}</span><IconButton label="Next opening move" disabled={step===o.line.length} onClick={()=>setStep(step+1)}><ChevronRight/></IconButton></div></section><aside className="training-panel"><div className="eyebrow">UNDERSTAND THE IDEA</div><h2>{step?sanLine(DEFAULT_POSITION,o.line.slice(0,step)).at(-1):'Start with the centre.'}</h2><p>{step?o.notes[step-1]:o.idea}</p><div className="solution">{sanLine(DEFAULT_POSITION,o.line.slice(0,step)).join(' · ')||'The starting position'}</div><Button onClick={()=>playPosition(b.fen(),props)}><Play/>Play from here</Button></aside></div></>}
- return <><div className="page-heading"><div><div className="eyebrow">SMALL HABITS, LASTING PROGRESS</div><h1>Make the lesson stick.</h1><p>Your mistakes are useful. Give them another look, a little further apart.</p></div><span className="stat-pill"><Leaf size={17}/>{due.length} ready to revisit</span></div><div className="practice-summary"><div><span className="eyebrow">YOUR NEXT SMALL STEP</span><h2>{due.length?'A familiar position. A fresh pair of eyes.':'Build your own practice book.'}</h2><p>{due.length?'Revisit a position from your games. Find a strong move, then check the continuation.':'Review a game and save a useful moment with “Practise”. It will come back here when it’s time to revisit it.'}</p><Button disabled={!due.length} onClick={()=>setActive(due[0])}>Practise a saved position<ArrowRight/></Button></div><div className="practice-number"><b>{state.cards.length}</b><span>positions collected</span></div></div><Tabs defaultValue="foundations"><TabsList><TabsTrigger value="foundations">Foundations</TabsTrigger><TabsTrigger value="queue">My practice queue</TabsTrigger><TabsTrigger value="patterns">Patterns to revisit</TabsTrigger></TabsList><TabsContent value="foundations"><div className="section-heading"><h2>Get comfortable in the opening</h2><span>Ideas before memorisation</span></div><div className="drill-grid">{openings.map((o,i)=><button className="drill-card" key={o.name} onClick={()=>{setOpening(i);setStep(0)}}><BookOpen size={22}/><span className="eyebrow">{o.tag}</span><h3>{o.name}</h3><p>{o.idea}</p><span className="card-link">Explore the opening<ArrowRight size={16}/></span></button>)}</div><div className="section-heading"><h2>Bring it home in the endgame</h2><span>Practise against Stockfish</span></div><div className="drill-grid">{endings.map(o=><button className="drill-card" key={o.name} onClick={()=>playPosition(o.fen,props)}><Target size={22}/><span className="eyebrow">ENDGAME</span><h3>{o.name}</h3><p>{o.idea}</p><span className="card-link">Set up the board<ArrowRight size={16}/></span></button>)}</div></TabsContent><TabsContent value="queue">{state.cards.length?<div className="queue-list">{state.cards.map(c=><div key={c.id}><div><strong>{c.source}</strong><span>{c.themes.map(themeLabel).join(' · ')} · {c.due<=Date.now()?'Ready now':`Due ${new Date(c.due).toLocaleDateString()}`}</span></div><Button variant="secondary" onClick={()=>setActive(c)}>Practise</Button></div>)}</div>:<Empty title="Your own games make the best lessons" icon={<BookmarkIcon/>}>Review a game, find a useful moment, and save it here.</Empty>}</TabsContent><TabsContent value="patterns">{weaknesses.length?<div className="pattern-list">{weaknesses.map(([theme,v])=><div key={theme}><strong>{themeLabel(theme)}</strong><span>{v.missed} of {v.total} attempts needed more work</span><progress value={v.missed} max={v.total}/></div>)}</div>:<Empty title="Patterns will emerge" icon={<Target/>}>Solve a few puzzles and revisit your mistakes. This view tracks which ideas need more practice.</Empty>}</TabsContent></Tabs></>;
+import { useState, useMemo, type Dispatch, type SetStateAction } from "react";
+import { toast } from "sonner";
+import {
+  Leaf,
+  ArrowRight,
+  Lightbulb,
+  RotateCcw,
+  Play,
+  BookOpen,
+  Target,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { Board } from "./Board";
+import { Button } from "./ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Choice, Empty, IconButton } from "./common";
+import {
+  board,
+  Chess,
+  DEFAULT_POSITION,
+  move,
+  newGame,
+  sanLine,
+  uid,
+} from "@/lib/chess";
+import { schedule } from "@/lib/storage";
+import type { Card, Page, State } from "@/lib/types";
+import puzzles from "@/data/puzzles.json";
+import { openings, endings } from "@/data/drills";
+type Props = {
+  state: State;
+  setState: Dispatch<SetStateAction<State>>;
+  onPage: (p: Page) => void;
+};
+function playPosition(fen: string, props: Props) {
+  const g = newGame(
+    { ...props.state.settings, side: new Chess(fen).turn() },
+    "stockfish",
+    fen,
+  );
+  g.title = "Practice from a position";
+  props.setState((s) => ({ ...s, current: g.id, games: [g, ...s.games] }));
+  props.onPage("play");
 }
-function BookmarkIcon(){return <BookOpen size={30}/>}
-function CardSession({card,onDone,...props}:Props&{card:Card;onDone:()=>void}){const [done,setDone]=useState(false);const [success,setSuccess]=useState(false);const [help,setHelp]=useState(false);const [feedback,setFeedback]=useState('Find a strong move. There may be several playable choices; this card practises the saved engine recommendation.');function finish(ok:boolean){if(done)return;setDone(true);setSuccess(ok);props.setState(s=>({...s,cards:s.cards.map(c=>c.id===card.id?schedule(c,ok&&!help):c),attempts:[...s.attempts,{id:card.id,kind:'card',themes:card.themes,success:ok,assisted:help,at:Date.now()}]}));}return <><div className="page-heading"><div><div className="eyebrow">A LESSON FROM YOUR OWN GAME</div><h1>What would you play now?</h1><p>{card.source}</p></div><Button variant="secondary" onClick={onDone}>Back to practice</Button></div><div className="training-layout"><Board fen={card.fen} orientation={new Chess(card.fen).turn()} onMove={m=>{if(m===card.solution){setFeedback('You found the saved recommendation. Nicely remembered.');finish(true)}else{setHelp(true);setFeedback('A different choice. Look again for the idea from your review.')}}} disabled={done}/><aside className="training-panel"><div className="eyebrow">SPACED PRACTICE</div><h2>{done?success?'An idea worth keeping.':'We’ll revisit this one.':'Pause and calculate.'}</h2><p>{feedback}</p>{done?<><div className="solution">{sanLine(card.fen,card.line).join(' → ')}</div><Button onClick={onDone}>Back to practice<ArrowRight/></Button><Button variant="secondary" onClick={()=>playPosition(card.fen,props)}>Play from here</Button><p className="small muted">{success&&!help?'Scheduled further apart next time.':'Scheduled again in about 10 minutes.'}</p></>:<Button variant="secondary" onClick={()=>{setHelp(true);finish(false);setFeedback('Look at the saved continuation, then try the position again later.')}}><Lightbulb/>Show the lesson</Button>}</aside></div></>}
+const themeLabel = (s: string) =>
+  s.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+export function Puzzles(props: Props) {
+  const { state } = props;
+  const [theme, setTheme] = useState("all");
+  const [difficulty, setDifficulty] = useState("level");
+  const [index, setIndex] = useState(0);
+  const pool = useMemo(
+    () =>
+      puzzles.filter(
+        (p) =>
+          (theme === "all" || p.themes.includes(theme)) &&
+          (difficulty === "all" ||
+            Math.abs(p.rating - state.settings.rating) <= 300),
+      ),
+    [theme, difficulty, state.settings.rating],
+  );
+  const puzzle = pool[index % Math.max(pool.length, 1)];
+  const themes = [...new Set(puzzles.flatMap((p) => p.themes))].sort();
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">A SMALL CHALLENGE, A SHARPER EYE</div>
+          <h1>Find the idea.</h1>
+          <p>No clock. Just you, the position, and a little curiosity.</p>
+        </div>
+        <span className="stat-pill">
+          <Target size={17} />
+          {
+            state.attempts.filter(
+              (a) => a.kind === "puzzle" && a.success && !a.assisted,
+            ).length
+          }{" "}
+          solved unaided
+        </span>
+      </div>
+      <div className="filters">
+        <Choice
+          label="Focus"
+          value={theme}
+          onChange={(v) => {
+            setTheme(v);
+            setIndex(0);
+          }}
+          options={[
+            { value: "all", label: "All themes" },
+            ...themes.map((t) => ({ value: t, label: themeLabel(t) })),
+          ]}
+        />
+        <Choice
+          label="Difficulty"
+          value={difficulty}
+          onChange={(v) => {
+            setDifficulty(v);
+            setIndex(0);
+          }}
+          options={[
+            {
+              value: "level",
+              label: `Around your level (${state.settings.rating})`,
+            },
+            { value: "all", label: "All levels · 600–1800" },
+          ]}
+        />
+        <span className="muted">{pool.length} positions</span>
+      </div>
+      {puzzle ? (
+        <PuzzleSession
+          key={puzzle.id}
+          puzzle={puzzle}
+          next={() => setIndex((i) => i + 1)}
+          {...props}
+        />
+      ) : (
+        <Empty title="No positions in this selection" icon={<Target />}>
+          Try all levels or another theme.
+        </Empty>
+      )}
+    </>
+  );
+}
+function PuzzleSession({
+  puzzle,
+  next,
+  ...props
+}: Props & { puzzle: (typeof puzzles)[number]; next: () => void }) {
+  const start = board({ initialFen: puzzle.fen, moves: [puzzle.moves[0]] });
+  const [played, setPlayed] = useState<string[]>([]);
+  const [hint, setHint] = useState(0);
+  const [assisted, setAssisted] = useState(false);
+  const [recorded, setRecorded] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const [feedback, setFeedback] = useState(
+    "Find the strongest continuation. Look for forcing moves.",
+  );
+  const line = puzzle.moves.slice(1);
+  const b = board({ initialFen: start.fen(), moves: played });
+  const done = played.length >= line.length;
+  function record(success: boolean, help = assisted) {
+    if (recorded) return;
+    setRecorded(true);
+    props.setState((s) => ({
+      ...s,
+      attempts: [
+        ...s.attempts,
+        {
+          id: puzzle.id,
+          kind: "puzzle",
+          themes: puzzle.themes,
+          success,
+          assisted: help,
+          at: Date.now(),
+        },
+      ],
+    }));
+  }
+  function attempt(m: string) {
+    if (done || revealed) return;
+    if (m !== line[played.length]) {
+      setAssisted(true);
+      setFeedback(
+        "That is not the puzzle continuation. Look for something more forcing.",
+      );
+      return;
+    }
+    const nextMoves = [...played, m];
+    if (nextMoves.length < line.length) nextMoves.push(line[nextMoves.length]);
+    setPlayed(nextMoves);
+    setHint(0);
+    setFeedback(
+      nextMoves.length >= line.length
+        ? "You found the full continuation. Keep the pattern, not just the move."
+        : "Good. Your opponent has replied. Keep the idea going.",
+    );
+    if (nextMoves.length >= line.length) record(true);
+  }
+  const wanted = line[played.length];
+  const piece = wanted ? b.get(wanted.slice(0, 2) as never) : null;
+  const hints = [
+    "What checks, captures, or threats can you find?",
+    `Look at the piece on ${wanted?.slice(0, 2)}. Can it make a forcing move?`,
+    `Consider ${wanted ? sanLine(b.fen(), [wanted])[0] : ""}. Work out your opponent’s reply.`,
+  ];
+  return (
+    <div className="training-layout">
+      <section>
+        <div className="player-bar">
+          <div className="avatar">
+            <Target />
+          </div>
+          <div>
+            <strong>{start.turn() === "w" ? "White" : "Black"} to move</strong>
+            <span>Puzzle {puzzle.id}</span>
+          </div>
+          <span className="pill">Take your time</span>
+        </div>
+        <Board
+          fen={b.fen()}
+          orientation={start.turn()}
+          onMove={attempt}
+          disabled={done || revealed}
+          lastMove={played.at(-1)}
+        />
+        <div className="source-row">
+          <span>Position from a real game</span>
+          <a href={puzzle.url} target="_blank" rel="noreferrer">
+            View source ↗
+          </a>
+        </div>
+      </section>
+      <aside className="training-panel">
+        <div className="eyebrow">
+          {done ? "IDEA FOUND" : `RATED ${puzzle.rating}`}
+        </div>
+        <h2>{done ? "That’s the move." : "Pause. Look. Calculate."}</h2>
+        <p>{feedback}</p>
+        {hint > 0 && !done && (
+          <div className="hint-box">
+            <Lightbulb size={19} />
+            <p>{hints[hint - 1]}</p>
+          </div>
+        )}
+        {(done || revealed) && (
+          <>
+            <div className="tags">
+              {puzzle.themes.map((t) => (
+                <span key={t}>{themeLabel(t)}</span>
+              ))}
+            </div>
+            <div className="solution">
+              {sanLine(start.fen(), line).join(" → ")}
+            </div>
+          </>
+        )}
+        {!done && !revealed ? (
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setHint((h) => Math.min(3, h + 1));
+                setAssisted(true);
+              }}
+              disabled={hint === 3}
+            >
+              <Lightbulb />A gentle hint
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAssisted(true);
+                setRevealed(true);
+                record(false, true);
+                setFeedback(
+                  "Explore the solution, then replay the puzzle to practise the idea.",
+                );
+              }}
+            >
+              Show solution
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={next}>
+              Next puzzle
+              <ArrowRight />
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => playPosition(start.fen(), props)}
+            >
+              <Play />
+              Play from here
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPlayed([]);
+                setHint(0);
+                setRevealed(false);
+                setAssisted(true);
+                setFeedback("Try finding the continuation again.");
+              }}
+            >
+              <RotateCcw />
+              Replay puzzle
+            </Button>
+          </>
+        )}
+        <div className="training-bottom">
+          <span>No clock. Take the time you need.</span>
+          <Button variant="ghost" onClick={next}>
+            Skip position
+            <ArrowRight />
+          </Button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+export function Practice(props: Props) {
+  const { state, setState } = props;
+  const [active, setActive] = useState<Card | null>(null);
+  const [opening, setOpening] = useState<number | null>(null);
+  const [step, setStep] = useState(0);
+  const due = state.cards.filter((c) => c.due <= Date.now());
+  const stats = new Map<string, { total: number; missed: number }>();
+  for (const a of state.attempts)
+    for (const t of a.themes) {
+      const v = stats.get(t) || { total: 0, missed: 0 };
+      v.total++;
+      if (!a.success || a.assisted) v.missed++;
+      stats.set(t, v);
+    }
+  const weaknesses = [...stats]
+    .filter(([, v]) => v.missed)
+    .sort((a, b) => b[1].missed - a[1].missed)
+    .slice(0, 5);
+  if (active)
+    return (
+      <CardSession
+        key={active.id}
+        card={active}
+        {...props}
+        onDone={() => setActive(null)}
+      />
+    );
+  if (opening !== null) {
+    const o = openings[opening];
+    const b = board({
+      initialFen: DEFAULT_POSITION,
+      moves: o.line.slice(0, step),
+    });
+    return (
+      <>
+        <div className="page-heading">
+          <div>
+            <div className="eyebrow">{o.tag}</div>
+            <h1>{o.name}</h1>
+            <p>{o.idea}</p>
+          </div>
+          <Button variant="secondary" onClick={() => setOpening(null)}>
+            Back to practice
+          </Button>
+        </div>
+        <div className="training-layout">
+          <section>
+            <Board
+              fen={b.fen()}
+              onMove={() => {}}
+              disabled
+              orientation={opening === 2 ? "b" : "w"}
+              lastMove={o.line[step - 1]}
+            />
+            <div className="opening-nav">
+              <IconButton
+                label="Previous opening move"
+                disabled={!step}
+                onClick={() => setStep(step - 1)}
+              >
+                <ChevronLeft />
+              </IconButton>
+              <span>
+                {step} / {o.line.length}
+              </span>
+              <IconButton
+                label="Next opening move"
+                disabled={step === o.line.length}
+                onClick={() => setStep(step + 1)}
+              >
+                <ChevronRight />
+              </IconButton>
+            </div>
+          </section>
+          <aside className="training-panel">
+            <div className="eyebrow">UNDERSTAND THE IDEA</div>
+            <h2>
+              {step
+                ? sanLine(DEFAULT_POSITION, o.line.slice(0, step)).at(-1)
+                : "Start with the centre."}
+            </h2>
+            <p>{step ? o.notes[step - 1] : o.idea}</p>
+            <div className="solution">
+              {sanLine(DEFAULT_POSITION, o.line.slice(0, step)).join(" · ") ||
+                "The starting position"}
+            </div>
+            <Button onClick={() => playPosition(b.fen(), props)}>
+              <Play />
+              Play from here
+            </Button>
+          </aside>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">SMALL HABITS, LASTING PROGRESS</div>
+          <h1>Make the lesson stick.</h1>
+          <p>
+            Your mistakes are useful. Give them another look, a little further
+            apart.
+          </p>
+        </div>
+        <span className="stat-pill">
+          <Leaf size={17} />
+          {due.length} ready to revisit
+        </span>
+      </div>
+      <div className="practice-summary">
+        <div>
+          <span className="eyebrow">YOUR NEXT SMALL STEP</span>
+          <h2>
+            {due.length
+              ? "A familiar position. A fresh pair of eyes."
+              : "Build your own practice book."}
+          </h2>
+          <p>
+            {due.length
+              ? "Revisit a position from your games. Find a strong move, then check the continuation."
+              : "Review a game and save a useful moment with “Practise”. It will come back here when it’s time to revisit it."}
+          </p>
+          <Button disabled={!due.length} onClick={() => setActive(due[0])}>
+            Practise a saved position
+            <ArrowRight />
+          </Button>
+        </div>
+        <div className="practice-number">
+          <b>{state.cards.length}</b>
+          <span>positions collected</span>
+        </div>
+      </div>
+      <Tabs defaultValue="foundations">
+        <TabsList>
+          <TabsTrigger value="foundations">Foundations</TabsTrigger>
+          <TabsTrigger value="queue">My practice queue</TabsTrigger>
+          <TabsTrigger value="patterns">Patterns to revisit</TabsTrigger>
+        </TabsList>
+        <TabsContent value="foundations">
+          <div className="section-heading">
+            <h2>Get comfortable in the opening</h2>
+            <span>Ideas before memorisation</span>
+          </div>
+          <div className="drill-grid">
+            {openings.map((o, i) => (
+              <button
+                className="drill-card"
+                key={o.name}
+                onClick={() => {
+                  setOpening(i);
+                  setStep(0);
+                }}
+              >
+                <BookOpen size={22} />
+                <span className="eyebrow">{o.tag}</span>
+                <h3>{o.name}</h3>
+                <p>{o.idea}</p>
+                <span className="card-link">
+                  Explore the opening
+                  <ArrowRight size={16} />
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="section-heading">
+            <h2>Bring it home in the endgame</h2>
+            <span>Practise against Stockfish</span>
+          </div>
+          <div className="drill-grid">
+            {endings.map((o) => (
+              <button
+                className="drill-card"
+                key={o.name}
+                onClick={() => playPosition(o.fen, props)}
+              >
+                <Target size={22} />
+                <span className="eyebrow">ENDGAME</span>
+                <h3>{o.name}</h3>
+                <p>{o.idea}</p>
+                <span className="card-link">
+                  Set up the board
+                  <ArrowRight size={16} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="queue">
+          {state.cards.length ? (
+            <div className="queue-list">
+              {state.cards.map((c) => (
+                <div key={c.id}>
+                  <div>
+                    <strong>{c.source}</strong>
+                    <span>
+                      {c.themes.map(themeLabel).join(" · ")} ·{" "}
+                      {c.due <= Date.now()
+                        ? "Ready now"
+                        : `Due ${new Date(c.due).toLocaleDateString()}`}
+                    </span>
+                  </div>
+                  <Button variant="secondary" onClick={() => setActive(c)}>
+                    Practise
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty
+              title="Your own games make the best lessons"
+              icon={<BookmarkIcon />}
+            >
+              Review a game, find a useful moment, and save it here.
+            </Empty>
+          )}
+        </TabsContent>
+        <TabsContent value="patterns">
+          {weaknesses.length ? (
+            <div className="pattern-list">
+              {weaknesses.map(([theme, v]) => (
+                <div key={theme}>
+                  <strong>{themeLabel(theme)}</strong>
+                  <span>
+                    {v.missed} of {v.total} attempts needed more work
+                  </span>
+                  <progress value={v.missed} max={v.total} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty title="Patterns will emerge" icon={<Target />}>
+              Solve a few puzzles and revisit your mistakes. This view tracks
+              which ideas need more practice.
+            </Empty>
+          )}
+        </TabsContent>
+      </Tabs>
+    </>
+  );
+}
+function BookmarkIcon() {
+  return <BookOpen size={30} />;
+}
+function CardSession({
+  card,
+  onDone,
+  ...props
+}: Props & { card: Card; onDone: () => void }) {
+  const [done, setDone] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [feedback, setFeedback] = useState(
+    "Find a strong move. There may be several playable choices; this card practises the saved engine recommendation.",
+  );
+  function finish(ok: boolean) {
+    if (done) return;
+    setDone(true);
+    setSuccess(ok);
+    props.setState((s) => ({
+      ...s,
+      cards: s.cards.map((c) =>
+        c.id === card.id ? schedule(c, ok && !help) : c,
+      ),
+      attempts: [
+        ...s.attempts,
+        {
+          id: card.id,
+          kind: "card",
+          themes: card.themes,
+          success: ok,
+          assisted: help,
+          at: Date.now(),
+        },
+      ],
+    }));
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">A LESSON FROM YOUR OWN GAME</div>
+          <h1>What would you play now?</h1>
+          <p>{card.source}</p>
+        </div>
+        <Button variant="secondary" onClick={onDone}>
+          Back to practice
+        </Button>
+      </div>
+      <div className="training-layout">
+        <Board
+          fen={card.fen}
+          orientation={new Chess(card.fen).turn()}
+          onMove={(m) => {
+            if (m === card.solution) {
+              setFeedback(
+                "You found the saved recommendation. Nicely remembered.",
+              );
+              finish(true);
+            } else {
+              setHelp(true);
+              setFeedback(
+                "A different choice. Look again for the idea from your review.",
+              );
+            }
+          }}
+          disabled={done}
+        />
+        <aside className="training-panel">
+          <div className="eyebrow">SPACED PRACTICE</div>
+          <h2>
+            {done
+              ? success
+                ? "An idea worth keeping."
+                : "We’ll revisit this one."
+              : "Pause and calculate."}
+          </h2>
+          <p>{feedback}</p>
+          {done ? (
+            <>
+              <div className="solution">
+                {sanLine(card.fen, card.line).join(" → ")}
+              </div>
+              <Button onClick={onDone}>
+                Back to practice
+                <ArrowRight />
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => playPosition(card.fen, props)}
+              >
+                Play from here
+              </Button>
+              <p className="small muted">
+                {success && !help
+                  ? "Scheduled further apart next time."
+                  : "Scheduled again in about 10 minutes."}
+              </p>
+            </>
+          ) : (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setHelp(true);
+                finish(false);
+                setFeedback(
+                  "Look at the saved continuation, then try the position again later.",
+                );
+              }}
+            >
+              <Lightbulb />
+              Show the lesson
+            </Button>
+          )}
+        </aside>
+      </div>
+    </>
+  );
+}

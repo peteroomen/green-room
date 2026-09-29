@@ -1,31 +1,1071 @@
-import {useEffect,useRef,useState,lazy,Suspense,type Dispatch,type SetStateAction} from 'react';
-import {Castle,Swords,ScanSearch,Puzzle,Leaf,BookOpen,Settings as SettingsIcon,ArrowUpRight,Plus,Menu,ShieldCheck,Download,Upload,Trash2,KeyRound,Check,Search} from 'lucide-react';
-import {Toaster,toast} from 'sonner';
-import {Button} from './components/ui/button';
-import {Input} from './components/ui/input';
-import {Textarea} from './components/ui/textarea';
-import {Switch} from './components/ui/switch';
-import {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from './components/ui/dialog';
-import {AlertDialog,AlertDialogContent,AlertDialogHeader,AlertDialogTitle,AlertDialogDescription,AlertDialogFooter,AlertDialogCancel,AlertDialogAction} from './components/ui/alert-dialog';
-import {Choice,Busy,Empty} from './components/common';
-import {board,newGame,importPgn,exportPgn,DEFAULT_POSITION} from './lib/chess';
-import {load,save,emptyState,download,parseBackup,STORAGE_KEY,today} from './lib/storage';
-import {getConfig,post} from './lib/api';
-import {difficulties,type State,type Page,type Settings,type Config,type Game} from './lib/types';
-const Workspace=lazy(()=>import('./components/Workspace').then(m=>({default:m.Workspace})));
-const Puzzles=lazy(()=>import('./components/Training').then(m=>({default:m.Puzzles})));
-const Practice=lazy(()=>import('./components/Training').then(m=>({default:m.Practice})));
-const nav=[{id:'play',label:'Play',icon:Swords},{id:'review',label:'Review',icon:ScanSearch},{id:'puzzles',label:'Puzzles',icon:Puzzle},{id:'practice',label:'Practice',icon:Leaf},{id:'games',label:'My games',icon:BookOpen}] as const;
-function initial(){try{return {data:load(),error:false}}catch{return {data:emptyState(),error:true}}}
-export default function App(){const [start]=useState(initial);const [state,setState]=useState(start.data);const [recovery,setRecovery]=useState(start.error);const [page,setPage]=useState<Page>('play');const [menu,setMenu]=useState(false);const [newOpen,setNewOpen]=useState(false);const [saveError,setSaveError]=useState('');const [config,setConfig]=useState<Config>({unlocked:false,passwordRequired:false,models:[]});const [configError,setConfigError]=useState('');const latest=useRef(state);latest.current=state;const calls=useRef(state.usage);calls.current=state.usage;
- useEffect(()=>{if(recovery)return;const t=setTimeout(()=>{try{save(state);setSaveError('')}catch{setSaveError('This device could not save your changes. Export a backup before closing.')}},200);return()=>clearTimeout(t)},[state,recovery]);useEffect(()=>{const persist=()=>{if(!recovery)try{save(latest.current)}catch{}};window.addEventListener('pagehide',persist);return()=>window.removeEventListener('pagehide',persist)},[recovery]);async function refresh(){try{setConfig(await getConfig());setConfigError('')}catch{setConfigError('AI connection unavailable. Local chess and training still work.')}}useEffect(()=>{void refresh()},[]);
- function navigate(p:Page){const g=latest.current.games.find(g=>g.id===latest.current.current);if(p==='review'&&g?.opponent==='llm'&&!g.result&&!board(g).isGameOver()){toast('Finish your AI game before reviewing it.');return;}setPage(p);setMenu(false)}
- function countCall(){const previous=calls.current.date===today()?calls.current:{date:today(),calls:0,input:0,output:0};if(previous.calls>=latest.current.settings.dailyLimit)return false;calls.current={...previous,calls:previous.calls+1};setState(s=>({...s,usage:calls.current}));return true}
- function usage(u:{inputTokens?:number;outputTokens?:number}){setState(s=>({...s,usage:{...s.usage,input:s.usage.input+(u.inputTokens||0),output:s.usage.output+(u.outputTokens||0)}}))}
- if(recovery)return <div className="recovery"><ShieldCheck size={36}/><h1>Let’s protect your saved games.</h1><p>The saved data could not be read. Download a recovery copy before starting fresh.</p><Button onClick={()=>download('greenroom-recovery.json',localStorage.getItem(STORAGE_KEY)||'{}','application/json')}>Download recovery file</Button><Button variant="secondary" onClick={()=>{setState(emptyState());setRecovery(false)}}>Start a fresh workspace</Button></div>;
- return <><div className="app-shell"><aside className={'sidebar '+(menu?'open':'')}><a href="#" className="brand" onClick={e=>{e.preventDefault();navigate('play')}}><span className="brand-mark"><Castle size={24}/></span>greenroom<span className="brand-period">.</span></a><div className="nav-label">YOUR CHESS ROOM</div><nav>{nav.map(n=><button key={n.id} className={page===n.id?'active':''} onClick={()=>navigate(n.id)}><n.icon size={19}/>{n.label}{n.id==='practice'&&state.cards.some(c=>c.due<=Date.now())&&<span className="nav-count">{state.cards.filter(c=>c.due<=Date.now()).length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="practice-note"><Leaf size={22}/><p>A little better.<br/><strong>One move at a time.</strong></p></div><button className={'settings-link '+(page==='settings'?'active':'')} onClick={()=>navigate('settings')}><SettingsIcon size={18}/>Settings</button><div className="profile"><span>P</span><div><strong>Personal workspace</strong><small>{state.settings.rating} practice level</small></div></div></div></aside><div className="main-shell"><header className="topbar"><div className="mobile-brand"><Button size="icon" variant="ghost" aria-label="Open navigation" onClick={()=>setMenu(!menu)}><Menu/></Button><Castle size={20}/><strong>greenroom.</strong></div><div className="breadcrumb">Your room <span>/</span> {page==='games'?'My games':page.charAt(0).toUpperCase()+page.slice(1)}</div><div className="topbar-right"><span className="online"><i/>Stockfish included</span><button onClick={()=>navigate('settings')}>{config.models.some(m=>m.ready)&&config.unlocked?'AI connected':'Connect AI'}<ArrowUpRight size={14}/></button></div></header><main>{saveError&&<div className="error" role="alert">{saveError}<Button size="sm" onClick={()=>download('greenroom-backup.json',JSON.stringify(state),'application/json')}>Export backup</Button></div>}<Suspense fallback={<div className="loading"><Busy>Opening your chess room</Busy></div>}>{(page==='play'||page==='review')&&<Workspace state={state} setState={setState} page={page} onPage={navigate} onNew={()=>setNewOpen(true)} config={config} onCall={countCall} onUsage={usage}/>} {page==='puzzles'&&<Puzzles state={state} setState={setState} onPage={navigate}/>} {page==='practice'&&<Practice state={state} setState={setState} onPage={navigate}/>} {page==='games'&&<Games state={state} setState={setState} onPage={navigate} onNew={()=>setNewOpen(true)}/>} {page==='settings'&&<SettingsPage state={state} setState={setState} config={config} error={configError} refresh={refresh}/>}</Suspense><footer><span>Greenroom · Your own pace.</span><a href="/credits.html" target="_blank" rel="noreferrer">Credits & licences ↗</a></footer></main></div></div><NewGame open={newOpen} onOpenChange={setNewOpen} settings={state.settings} config={config} start={(s,opponent,fen)=>{const g=newGame(s,opponent,fen);setState(old=>({...old,settings:s,current:g.id,games:[g,...old.games]}));setNewOpen(false);navigate('play')}}/><Toaster theme="dark" richColors position="bottom-right"/></>;
+import {
+  useEffect,
+  useRef,
+  useState,
+  lazy,
+  Suspense,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import {
+  Castle,
+  Swords,
+  ScanSearch,
+  Puzzle,
+  Leaf,
+  BookOpen,
+  Settings as SettingsIcon,
+  ArrowUpRight,
+  Plus,
+  Menu,
+  ShieldCheck,
+  Download,
+  Upload,
+  Trash2,
+  KeyRound,
+  Check,
+  Search,
+} from "lucide-react";
+import { Toaster, toast } from "sonner";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import { Textarea } from "./components/ui/textarea";
+import { Switch } from "./components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "./components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "./components/ui/alert-dialog";
+import { Choice, Busy, Empty } from "./components/common";
+import {
+  board,
+  newGame,
+  importPgn,
+  exportPgn,
+  DEFAULT_POSITION,
+} from "./lib/chess";
+import {
+  load,
+  save,
+  emptyState,
+  download,
+  parseBackup,
+  STORAGE_KEY,
+  today,
+} from "./lib/storage";
+import { getConfig, post } from "./lib/api";
+import {
+  difficulties,
+  type State,
+  type Page,
+  type Settings,
+  type Config,
+  type Game,
+} from "./lib/types";
+const Workspace = lazy(() =>
+  import("./components/Workspace").then((m) => ({ default: m.Workspace })),
+);
+const Puzzles = lazy(() =>
+  import("./components/Training").then((m) => ({ default: m.Puzzles })),
+);
+const Practice = lazy(() =>
+  import("./components/Training").then((m) => ({ default: m.Practice })),
+);
+const nav = [
+  { id: "play", label: "Play", icon: Swords },
+  { id: "review", label: "Review", icon: ScanSearch },
+  { id: "puzzles", label: "Puzzles", icon: Puzzle },
+  { id: "practice", label: "Practice", icon: Leaf },
+  { id: "games", label: "My games", icon: BookOpen },
+] as const;
+function initial() {
+  try {
+    return { data: load(), error: false };
+  } catch {
+    return { data: emptyState(), error: true };
+  }
 }
-function NewGame({open,onOpenChange,settings,config,start}:{open:boolean;onOpenChange:(v:boolean)=>void;settings:Settings;config:Config;start:(s:Settings,o:Game['opponent'],fen:string)=>void}){const [draft,setDraft]=useState(settings);const [opponent,setOpponent]=useState<Game['opponent']>('stockfish');const [fen,setFen]=useState('');useEffect(()=>{if(open){setDraft(settings);setFen('')}},[open]);return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogTitle>A fresh board.</DialogTitle><DialogDescription>Your current game stays in My games.</DialogDescription><div className="form-stack"><Choice label="Opponent" value={opponent} onChange={v=>setOpponent(v as Game['opponent'])} options={[{value:'stockfish',label:'Stockfish · traditional engine'},{value:'llm',label:'AI model · independent calculation'},{value:'local',label:'Explore · move both sides'}]}/>{opponent==='stockfish'&&<Choice label="Difficulty" value={String(draft.difficulty)} onChange={v=>setDraft({...draft,difficulty:Number(v)})} options={difficulties.map((d,i)=>({value:String(i),label:d.name}))}/>} {opponent==='llm'&&<><Choice label="Model" value={draft.provider} onChange={v=>setDraft({...draft,provider:v as Settings['provider']})} options={[{value:'claude',label:'Claude'},{value:'openai',label:'OpenAI'},{value:'google',label:'Gemini'}]}/>{(!config.unlocked||!config.models.some(m=>m.id===draft.provider&&m.ready))&&<p className="notice">Connect this model in Settings before it can play.</p>}<p className="small muted">Coaching and engine analysis unlock after the game.</p></>}<Choice label="Your pieces" value={draft.side} onChange={v=>setDraft({...draft,side:v as 'w'|'b'})} options={[{value:'w',label:'White · move first'},{value:'b',label:'Black · move second'}]}/><details><summary>Start from a custom position</summary><label className="field"><span>FEN position</span><Textarea value={fen} onChange={e=>setFen(e.target.value)} placeholder="Optional FEN…"/></label></details></div><DialogFooter><Button variant="secondary" onClick={()=>onOpenChange(false)}>Cancel</Button><Button onClick={()=>{try{board({initialFen:fen.trim()||DEFAULT_POSITION,moves:[]});start(draft,opponent,fen.trim()||DEFAULT_POSITION)}catch{toast.error('That FEN is not a valid chess position.')}}}>Start game<ArrowUpRight/></Button></DialogFooter></DialogContent></Dialog>}
-type StoreProps={state:State;setState:Dispatch<SetStateAction<State>>};
-function Games({state,setState,onPage,onNew}:StoreProps&{onPage:(p:Page)=>void;onNew:()=>void}){const [query,setQuery]=useState('');const [pgn,setPgn]=useState('');const [importOpen,setImportOpen]=useState(false);const [deleteId,setDeleteId]=useState<string|null>(null);function open(g:Game,p:Page){setState(s=>({...s,current:g.id}));onPage(p)}return <><div className="page-heading"><div><div className="eyebrow">YOUR GAMES, YOUR PROGRESS</div><h1>A story in every game.</h1><p>Pick up where you left off, or look back with fresh eyes.</p></div><div className="row"><Button variant="secondary" onClick={()=>setImportOpen(true)}><Upload/>Import PGN</Button><Button onClick={onNew}><Plus/>New game</Button></div></div><div className="search-field"><Search size={17}/><Input aria-label="Search games" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a game…"/></div><div className="game-list">{state.games.filter(g=>g.title.toLowerCase().includes(query.toLowerCase())).map(g=><div className="game-row" key={g.id}><div className="avatar"><Castle/></div><div className="game-description"><h3>{g.title}</h3><p>{new Date(g.createdAt).toLocaleDateString(undefined,{day:'numeric',month:'short'})} · {Math.ceil(g.moves.length/2)} moves · {g.result||'In progress'}</p></div><Button variant="secondary" onClick={()=>open(g,'play')}>Open</Button><Button variant="ghost" disabled={g.opponent==='llm'&&!g.result} onClick={()=>open(g,'review')}>Review</Button><Button variant="ghost" size="icon" aria-label={`Export ${g.title}`} onClick={()=>download('greenroom-game.pgn',exportPgn(g))}><Download size={17}/></Button><Button variant="ghost" size="icon" aria-label={`Delete ${g.title}`} onClick={()=>setDeleteId(g.id)}><Trash2 size={16}/></Button></div>)}</div><Dialog open={importOpen} onOpenChange={setImportOpen}><DialogContent><DialogTitle>Bring a game into Greenroom.</DialogTitle><DialogDescription>Paste a PGN or choose a PGN file to review it.</DialogDescription><Input type="file" accept=".pgn,.txt" aria-label="Choose PGN file" onChange={async e=>{const f=e.target.files?.[0];if(f){if(f.size>1000000)return toast.error('Choose a PGN under 1 MB.');setPgn(await f.text())}}}/><Textarea rows={9} aria-label="PGN text" placeholder={'[Event "My game"]\n\n1. e4 e5 2. Nf3…'} value={pgn} onChange={e=>setPgn(e.target.value)}/><DialogFooter><Button onClick={()=>{try{const g=importPgn(pgn,state.settings);setState(s=>({...s,current:g.id,games:[g,...s.games]}));setImportOpen(false);setPgn('');onPage('review')}catch{toast.error('Could not read that PGN. Check the move sequence.')}}}>Import game</Button></DialogFooter></DialogContent></Dialog><AlertDialog open={Boolean(deleteId)} onOpenChange={v=>{if(!v)setDeleteId(null)}}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this saved game?</AlertDialogTitle><AlertDialogDescription>The game and its chat will be removed from this device. Saved practice cards stay available.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep game</AlertDialogCancel><AlertDialogAction onClick={()=>{setState(s=>{let games=s.games.filter(g=>g.id!==deleteId);if(!games.length)games=[newGame(s.settings)];const chats={...s.chats};delete chats[deleteId!];return {...s,games,chats,current:s.current===deleteId?games[0].id:s.current}});setDeleteId(null)}}>Delete game</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></>}
-function SettingsPage({state,setState,config,error,refresh}:StoreProps&{config:Config;error:string;refresh:()=>Promise<void>}){const s=state.settings;const [password,setPassword]=useState('');const [unlocking,setUnlocking]=useState(false);const [backup,setBackup]=useState<State|null>(null);const [rating,setRating]=useState(String(s.rating));function patch(v:Partial<Settings>){setState(old=>({...old,settings:{...old.settings,...v}}))}return <><div className="page-heading"><div><div className="eyebrow">MAKE THIS ROOM YOURS</div><h1>Your pace. Your preferences.</h1><p>Set the level of help that makes chess enjoyable for you.</p></div><span className="saved-label"><Check size={15}/>Saved automatically</span></div><div className="settings-grid"><section className="settings-section"><div className="section-title"><Leaf/><div><h2>Your learning style</h2><p>A starting point, not a label.</p></div></div><label className="field"><span>Your approximate rating</span><Input type="number" min={100} max={3000} value={rating} onChange={e=>setRating(e.target.value)} onBlur={()=>{const n=Number(rating);if(n>=100&&n<=3000)patch({rating:n});else setRating(String(s.rating))}}/></label><Choice label="Default engine difficulty" value={String(s.difficulty)} onChange={v=>patch({difficulty:Number(v)})} options={difficulties.map((d,i)=>({value:String(i),label:d.name}))}/><p className="small muted">Difficulty names describe engine settings, not calibrated Elo ratings.</p><Choice label="When should advice arrive?" value={s.timing} onChange={v=>patch({timing:v as Settings['timing']})} options={[{value:'request',label:'Only when I ask'},{value:'before',label:'Before I commit a move'},{value:'after',label:'After my move'}]}/><Choice label="How often?" value={s.frequency} onChange={v=>patch({frequency:v as Settings['frequency']})} options={[{value:'critical',label:'Only important moments'},{value:'occasional',label:'Occasional guidance'},{value:'every',label:'Every move'}]}/><Choice label="Hint detail" value={String(s.detail)} onChange={v=>patch({detail:Number(v)})} options={['A gentle question','Point toward an idea','Name the piece','Suggest a move','Show and explain'].map((label,i)=>({value:String(i+1),label}))}/><Choice label="Explanation style" value={s.level} onChange={v=>patch({level:v as Settings['level']})} options={[{value:'plain',label:'Plain language · explain chess terms'},{value:'standard',label:'Standard · familiar with the basics'},{value:'advanced',label:'Detailed · variations and strategy'}]}/></section><section className="settings-section"><div className="section-title"><KeyRound/><div><h2>Your AI connection</h2><p>Keys stay on the server.</p></div></div>{error&&<div className="error">{error}</div>}<div className="model-list">{config.models.map(m=><div key={m.id}><div><strong>{m.id==='claude'?'Claude':m.id==='google'?'Gemini':'OpenAI'}</strong><span>{m.name}</span></div><span className={'pill '+(m.ready?'positive':'')}>{m.ready?'Configured':'Needs API key'}</span></div>)}</div><p className="small muted">Add ANTHROPIC_API_KEY and APP_PASSWORD in your Vercel project, then redeploy. ANTHROPIC_MODEL selects the Claude model. Never paste an API key into chat.</p><Choice label="Coach model" value={s.provider} onChange={v=>patch({provider:v as Settings['provider']})} options={[{value:'claude',label:'Claude'},{value:'openai',label:'OpenAI'},{value:'google',label:'Gemini'}]}/>{config.passwordRequired&&!config.unlocked&&<form className="unlock-form" onSubmit={async e=>{e.preventDefault();setUnlocking(true);try{await post('session',{password});setPassword('');await refresh();toast.success('AI unlocked on this device.')}catch(e){toast.error(String(e))}finally{setUnlocking(false)}}}><label className="field"><span>Personal app password</span><Input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password"/></label><Button disabled={unlocking||!password}>{unlocking?<Busy>Unlocking</Busy>:<><KeyRound/>Unlock AI</>}</Button></form>}{config.unlocked&&<p className="positive small"><ShieldCheck size={15}/>This device is unlocked.</p>}<Button variant="secondary" onClick={()=>void refresh()}>Refresh connection</Button><div className="usage"><strong>{state.usage.date===today()?state.usage.calls:0} / {s.dailyLimit}</strong><span>AI requests today</span><small>{state.usage.input.toLocaleString()} input · {state.usage.output.toLocaleString()} output tokens</small></div><label className="field"><span>Daily AI call limit</span><Input type="number" min={1} max={200} value={s.dailyLimit} onChange={e=>{const n=Number(e.target.value);if(n>=1&&n<=200)patch({dailyLimit:n})}}/></label><p className="small muted">This device’s limit is a spending reminder. Set a provider budget for a hard account-wide cap.</p></section><section className="settings-section"><div className="section-title"><ScanSearch/><div><h2>Analysis</h2><p>Stockfish runs on your device.</p></div></div><Choice label="Analysis time per position" value={String(s.analysisMs)} onChange={v=>patch({analysisMs:Number(v)})} options={[{value:'250',label:'Quick · 0.25 seconds'},{value:'450',label:'Balanced · 0.45 seconds'},{value:'1000',label:'Deeper · 1 second'},{value:'2500',label:'Patient · 2.5 seconds'}]}/><div className="switch-row"><div><strong>Show evaluation bar</strong><p>Visible after analysing a position.</p></div><Switch aria-label="Show evaluation bar" checked={s.showEval} onCheckedChange={v=>patch({showEval:v})}/></div><p className="small muted">Engine analysis and coaching are disabled during games against an LLM. Play from either side on an analysis board.</p></section><section className="settings-section"><div className="section-title"><Download/><div><h2>Keep your progress</h2><p>Games, chats, puzzles and practice live on this device.</p></div></div><p className="muted">Export a backup before clearing browser data or moving to another device.</p><Button variant="secondary" onClick={()=>download('greenroom-backup.json',JSON.stringify(state,null,2),'application/json')}><Download/>Export full backup</Button><label className="field"><span>Restore a backup</span><Input type="file" accept=".json" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;try{setBackup(parseBackup(await f.text()))}catch{toast.error('This is not a valid Greenroom backup.')}e.target.value=''}}/></label><p className="small muted">No account or database is required. Device-to-device sync can be added later.</p></section></div><AlertDialog open={Boolean(backup)} onOpenChange={v=>{if(!v)setBackup(null)}}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restore this workspace?</AlertDialogTitle><AlertDialogDescription>This replaces the games and progress on this device with {backup?.games.length} saved games. Export your current workspace first if you want to keep it.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={()=>{if(backup)setState(backup);setBackup(null);toast.success('Workspace restored.')}}>Restore backup</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></>}
+export default function App() {
+  const [start] = useState(initial);
+  const [state, setState] = useState(start.data);
+  const [recovery, setRecovery] = useState(start.error);
+  const [page, setPage] = useState<Page>("play");
+  const [menu, setMenu] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [config, setConfig] = useState<Config>({
+    unlocked: false,
+    passwordRequired: false,
+    models: [],
+  });
+  const [configError, setConfigError] = useState("");
+  const latest = useRef(state);
+  latest.current = state;
+  const calls = useRef(state.usage);
+  calls.current = state.usage;
+  useEffect(() => {
+    if (recovery) return;
+    const t = setTimeout(() => {
+      try {
+        save(state);
+        setSaveError("");
+      } catch {
+        setSaveError(
+          "This device could not save your changes. Export a backup before closing.",
+        );
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [state, recovery]);
+  useEffect(() => {
+    const persist = () => {
+      if (!recovery)
+        try {
+          save(latest.current);
+        } catch {}
+    };
+    window.addEventListener("pagehide", persist);
+    return () => window.removeEventListener("pagehide", persist);
+  }, [recovery]);
+  async function refresh() {
+    try {
+      setConfig(await getConfig());
+      setConfigError("");
+    } catch {
+      setConfigError(
+        "AI connection unavailable. Local chess and training still work.",
+      );
+    }
+  }
+  useEffect(() => {
+    void refresh();
+  }, []);
+  function navigate(p: Page, target?: Game) {
+    const g =
+      target ??
+      latest.current.games.find((g) => g.id === latest.current.current);
+    if (
+      p === "review" &&
+      g?.opponent === "llm" &&
+      !g.result &&
+      !board(g).isGameOver()
+    ) {
+      toast("Finish your AI game before reviewing it.");
+      return;
+    }
+    setPage(p);
+    setMenu(false);
+  }
+  function countCall() {
+    const previous =
+      calls.current.date === today()
+        ? calls.current
+        : { date: today(), calls: 0, input: 0, output: 0 };
+    if (previous.calls >= latest.current.settings.dailyLimit) return false;
+    calls.current = { ...previous, calls: previous.calls + 1 };
+    setState((s) => ({ ...s, usage: calls.current }));
+    return true;
+  }
+  function usage(u: { inputTokens?: number; outputTokens?: number }) {
+    setState((s) => ({
+      ...s,
+      usage: {
+        ...s.usage,
+        input: s.usage.input + (u.inputTokens || 0),
+        output: s.usage.output + (u.outputTokens || 0),
+      },
+    }));
+  }
+  if (recovery)
+    return (
+      <div className="recovery">
+        <ShieldCheck size={36} />
+        <h1>Let’s protect your saved games.</h1>
+        <p>
+          The saved data could not be read. Download a recovery copy before
+          starting fresh.
+        </p>
+        <Button
+          onClick={() =>
+            download(
+              "greenroom-recovery.json",
+              localStorage.getItem(STORAGE_KEY) || "{}",
+              "application/json",
+            )
+          }
+        >
+          Download recovery file
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setState(emptyState());
+            setRecovery(false);
+          }}
+        >
+          Start a fresh workspace
+        </Button>
+      </div>
+    );
+  return (
+    <>
+      <div className="app-shell">
+        <aside className={"sidebar " + (menu ? "open" : "")}>
+          <a
+            href="#"
+            className="brand"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate("play");
+            }}
+          >
+            <span className="brand-mark">
+              <Castle size={24} />
+            </span>
+            greenroom<span className="brand-period">.</span>
+          </a>
+          <div className="nav-label">YOUR CHESS ROOM</div>
+          <nav>
+            {nav.map((n) => (
+              <button
+                key={n.id}
+                className={page === n.id ? "active" : ""}
+                onClick={() => navigate(n.id)}
+              >
+                <n.icon size={19} />
+                {n.label}
+                {n.id === "practice" &&
+                  state.cards.some((c) => c.due <= Date.now()) && (
+                    <span className="nav-count">
+                      {state.cards.filter((c) => c.due <= Date.now()).length}
+                    </span>
+                  )}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-bottom">
+            <div className="practice-note">
+              <Leaf size={22} />
+              <p>
+                A little better.
+                <br />
+                <strong>One move at a time.</strong>
+              </p>
+            </div>
+            <button
+              className={
+                "settings-link " + (page === "settings" ? "active" : "")
+              }
+              onClick={() => navigate("settings")}
+            >
+              <SettingsIcon size={18} />
+              Settings
+            </button>
+            <div className="profile">
+              <span>P</span>
+              <div>
+                <strong>Personal workspace</strong>
+                <small>{state.settings.rating} practice level</small>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <div className="main-shell">
+          <header className="topbar">
+            <div className="mobile-brand">
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Open navigation"
+                onClick={() => setMenu(!menu)}
+              >
+                <Menu />
+              </Button>
+              <Castle size={20} />
+              <strong>greenroom.</strong>
+            </div>
+            <div className="breadcrumb">
+              Your room <span>/</span>{" "}
+              {page === "games"
+                ? "My games"
+                : page.charAt(0).toUpperCase() + page.slice(1)}
+            </div>
+            <div className="topbar-right">
+              <span className="online">
+                <i />
+                Stockfish included
+              </span>
+              <button onClick={() => navigate("settings")}>
+                {config.models.some((m) => m.ready) && config.unlocked
+                  ? "AI connected"
+                  : "Connect AI"}
+                <ArrowUpRight size={14} />
+              </button>
+            </div>
+          </header>
+          <main>
+            {saveError && (
+              <div className="error" role="alert">
+                {saveError}
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    download(
+                      "greenroom-backup.json",
+                      JSON.stringify(state),
+                      "application/json",
+                    )
+                  }
+                >
+                  Export backup
+                </Button>
+              </div>
+            )}
+            <Suspense
+              fallback={
+                <div className="loading">
+                  <Busy>Opening your chess room</Busy>
+                </div>
+              }
+            >
+              {(page === "play" || page === "review") && (
+                <Workspace
+                  state={state}
+                  setState={setState}
+                  page={page}
+                  onPage={navigate}
+                  onNew={() => setNewOpen(true)}
+                  config={config}
+                  onCall={countCall}
+                  onUsage={usage}
+                />
+              )}{" "}
+              {page === "puzzles" && (
+                <Puzzles state={state} setState={setState} onPage={navigate} />
+              )}{" "}
+              {page === "practice" && (
+                <Practice state={state} setState={setState} onPage={navigate} />
+              )}{" "}
+              {page === "games" && (
+                <Games
+                  state={state}
+                  setState={setState}
+                  onPage={navigate}
+                  onNew={() => setNewOpen(true)}
+                />
+              )}{" "}
+              {page === "settings" && (
+                <SettingsPage
+                  state={state}
+                  setState={setState}
+                  config={config}
+                  error={configError}
+                  refresh={refresh}
+                />
+              )}
+            </Suspense>
+            <footer>
+              <span>Greenroom · Your own pace.</span>
+              <a href="/credits.html" target="_blank" rel="noreferrer">
+                Credits & licences ↗
+              </a>
+            </footer>
+          </main>
+        </div>
+      </div>
+      <NewGame
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        settings={state.settings}
+        config={config}
+        start={(s, opponent, fen) => {
+          const g = newGame(s, opponent, fen);
+          setState((old) => ({
+            ...old,
+            settings: s,
+            current: g.id,
+            games: [g, ...old.games],
+          }));
+          setNewOpen(false);
+          navigate("play");
+        }}
+      />
+      <Toaster theme="dark" richColors position="bottom-right" />
+    </>
+  );
+}
+function NewGame({
+  open,
+  onOpenChange,
+  settings,
+  config,
+  start,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  settings: Settings;
+  config: Config;
+  start: (s: Settings, o: Game["opponent"], fen: string) => void;
+}) {
+  const [draft, setDraft] = useState(settings);
+  const [opponent, setOpponent] = useState<Game["opponent"]>("stockfish");
+  const [fen, setFen] = useState("");
+  useEffect(() => {
+    if (open) {
+      setDraft(settings);
+      setFen("");
+    }
+  }, [open]);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle>A fresh board.</DialogTitle>
+        <DialogDescription>
+          Your current game stays in My games.
+        </DialogDescription>
+        <div className="form-stack">
+          <Choice
+            label="Opponent"
+            value={opponent}
+            onChange={(v) => setOpponent(v as Game["opponent"])}
+            options={[
+              { value: "stockfish", label: "Stockfish · traditional engine" },
+              { value: "llm", label: "AI model · independent calculation" },
+              { value: "local", label: "Explore · move both sides" },
+            ]}
+          />
+          {opponent === "stockfish" && (
+            <Choice
+              label="Difficulty"
+              value={String(draft.difficulty)}
+              onChange={(v) => setDraft({ ...draft, difficulty: Number(v) })}
+              options={difficulties.map((d, i) => ({
+                value: String(i),
+                label: d.name,
+              }))}
+            />
+          )}{" "}
+          {opponent === "llm" && (
+            <>
+              <Choice
+                label="Model"
+                value={draft.provider}
+                onChange={(v) =>
+                  setDraft({ ...draft, provider: v as Settings["provider"] })
+                }
+                options={[
+                  { value: "claude", label: "Claude" },
+                  { value: "openai", label: "OpenAI" },
+                  { value: "google", label: "Gemini" },
+                ]}
+              />
+              {(!config.unlocked ||
+                !config.models.some(
+                  (m) => m.id === draft.provider && m.ready,
+                )) && (
+                <p className="notice">
+                  Connect this model in Settings before it can play.
+                </p>
+              )}
+              <p className="small muted">
+                Coaching and engine analysis unlock after the game.
+              </p>
+            </>
+          )}
+          <Choice
+            label="Your pieces"
+            value={draft.side}
+            onChange={(v) => setDraft({ ...draft, side: v as "w" | "b" })}
+            options={[
+              { value: "w", label: "White · move first" },
+              { value: "b", label: "Black · move second" },
+            ]}
+          />
+          <details>
+            <summary>Start from a custom position</summary>
+            <label className="field">
+              <span>FEN position</span>
+              <Textarea
+                value={fen}
+                onChange={(e) => setFen(e.target.value)}
+                placeholder="Optional FEN…"
+              />
+            </label>
+          </details>
+        </div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              try {
+                board({
+                  initialFen: fen.trim() || DEFAULT_POSITION,
+                  moves: [],
+                });
+                start(draft, opponent, fen.trim() || DEFAULT_POSITION);
+              } catch {
+                toast.error("That FEN is not a valid chess position.");
+              }
+            }}
+          >
+            Start game
+            <ArrowUpRight />
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+type StoreProps = { state: State; setState: Dispatch<SetStateAction<State>> };
+function Games({
+  state,
+  setState,
+  onPage,
+  onNew,
+}: StoreProps & {
+  onPage: (p: Page, target?: Game) => void;
+  onNew: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [pgn, setPgn] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  function open(g: Game, p: Page) {
+    setState((s) => ({ ...s, current: g.id }));
+    onPage(p, g);
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">YOUR GAMES, YOUR PROGRESS</div>
+          <h1>A story in every game.</h1>
+          <p>Pick up where you left off, or look back with fresh eyes.</p>
+        </div>
+        <div className="row">
+          <Button variant="secondary" onClick={() => setImportOpen(true)}>
+            <Upload />
+            Import PGN
+          </Button>
+          <Button onClick={onNew}>
+            <Plus />
+            New game
+          </Button>
+        </div>
+      </div>
+      <div className="search-field">
+        <Search size={17} />
+        <Input
+          aria-label="Search games"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find a game…"
+        />
+      </div>
+      <div className="game-list">
+        {state.games
+          .filter((g) => g.title.toLowerCase().includes(query.toLowerCase()))
+          .map((g) => (
+            <div className="game-row" key={g.id}>
+              <div className="avatar">
+                <Castle />
+              </div>
+              <div className="game-description">
+                <h3>{g.title}</h3>
+                <p>
+                  {new Date(g.createdAt).toLocaleDateString(undefined, {
+                    day: "numeric",
+                    month: "short",
+                  })}{" "}
+                  · {Math.ceil(g.moves.length / 2)} moves ·{" "}
+                  {g.result || "In progress"}
+                </p>
+              </div>
+              <Button variant="secondary" onClick={() => open(g, "play")}>
+                Open
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={g.opponent === "llm" && !g.result}
+                onClick={() => open(g, "review")}
+              >
+                Review
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Export ${g.title}`}
+                onClick={() => download("greenroom-game.pgn", exportPgn(g))}
+              >
+                <Download size={17} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Delete ${g.title}`}
+                onClick={() => setDeleteId(g.id)}
+              >
+                <Trash2 size={16} />
+              </Button>
+            </div>
+          ))}
+      </div>
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent>
+          <DialogTitle>Bring a game into Greenroom.</DialogTitle>
+          <DialogDescription>
+            Paste a PGN or choose a PGN file to review it.
+          </DialogDescription>
+          <Input
+            type="file"
+            accept=".pgn,.txt"
+            aria-label="Choose PGN file"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (f) {
+                if (f.size > 1000000)
+                  return toast.error("Choose a PGN under 1 MB.");
+                setPgn(await f.text());
+              }
+            }}
+          />
+          <Textarea
+            rows={9}
+            aria-label="PGN text"
+            placeholder={'[Event "My game"]\n\n1. e4 e5 2. Nf3…'}
+            value={pgn}
+            onChange={(e) => setPgn(e.target.value)}
+          />
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                try {
+                  const g = importPgn(pgn, state.settings);
+                  setState((s) => ({
+                    ...s,
+                    current: g.id,
+                    games: [g, ...s.games],
+                  }));
+                  setImportOpen(false);
+                  setPgn("");
+                  onPage("review", g);
+                } catch {
+                  toast.error(
+                    "Could not read that PGN. Check the move sequence.",
+                  );
+                }
+              }}
+            >
+              Import game
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog
+        open={Boolean(deleteId)}
+        onOpenChange={(v) => {
+          if (!v) setDeleteId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this saved game?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The game and its chat will be removed from this device. Saved
+              practice cards stay available.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep game</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setState((s) => {
+                  let games = s.games.filter((g) => g.id !== deleteId);
+                  if (!games.length) games = [newGame(s.settings)];
+                  const chats = { ...s.chats };
+                  delete chats[deleteId!];
+                  return {
+                    ...s,
+                    games,
+                    chats,
+                    current: s.current === deleteId ? games[0].id : s.current,
+                  };
+                });
+                setDeleteId(null);
+              }}
+            >
+              Delete game
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+function SettingsPage({
+  state,
+  setState,
+  config,
+  error,
+  refresh,
+}: StoreProps & {
+  config: Config;
+  error: string;
+  refresh: () => Promise<void>;
+}) {
+  const s = state.settings;
+  const [password, setPassword] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [backup, setBackup] = useState<State | null>(null);
+  const [rating, setRating] = useState(String(s.rating));
+  function patch(v: Partial<Settings>) {
+    setState((old) => ({ ...old, settings: { ...old.settings, ...v } }));
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">MAKE THIS ROOM YOURS</div>
+          <h1>Your pace. Your preferences.</h1>
+          <p>Set the level of help that makes chess enjoyable for you.</p>
+        </div>
+        <span className="saved-label">
+          <Check size={15} />
+          Saved automatically
+        </span>
+      </div>
+      <div className="settings-grid">
+        <section className="settings-section">
+          <div className="section-title">
+            <Leaf />
+            <div>
+              <h2>Your learning style</h2>
+              <p>A starting point, not a label.</p>
+            </div>
+          </div>
+          <label className="field">
+            <span>Your approximate rating</span>
+            <Input
+              type="number"
+              min={100}
+              max={3000}
+              value={rating}
+              onChange={(e) => setRating(e.target.value)}
+              onBlur={() => {
+                const n = Number(rating);
+                if (n >= 100 && n <= 3000) patch({ rating: n });
+                else setRating(String(s.rating));
+              }}
+            />
+          </label>
+          <Choice
+            label="Default engine difficulty"
+            value={String(s.difficulty)}
+            onChange={(v) => patch({ difficulty: Number(v) })}
+            options={difficulties.map((d, i) => ({
+              value: String(i),
+              label: d.name,
+            }))}
+          />
+          <p className="small muted">
+            Difficulty names describe engine settings, not calibrated Elo
+            ratings.
+          </p>
+          <Choice
+            label="When should advice arrive?"
+            value={s.timing}
+            onChange={(v) => patch({ timing: v as Settings["timing"] })}
+            options={[
+              { value: "request", label: "Only when I ask" },
+              { value: "before", label: "Before I commit a move" },
+              { value: "after", label: "After my move" },
+            ]}
+          />
+          <Choice
+            label="How often?"
+            value={s.frequency}
+            onChange={(v) => patch({ frequency: v as Settings["frequency"] })}
+            options={[
+              { value: "critical", label: "Only important moments" },
+              { value: "occasional", label: "Occasional guidance" },
+              { value: "every", label: "Every move" },
+            ]}
+          />
+          <Choice
+            label="Hint detail"
+            value={String(s.detail)}
+            onChange={(v) => patch({ detail: Number(v) })}
+            options={[
+              "A gentle question",
+              "Point toward an idea",
+              "Name the piece",
+              "Suggest a move",
+              "Show and explain",
+            ].map((label, i) => ({ value: String(i + 1), label }))}
+          />
+          <Choice
+            label="Explanation style"
+            value={s.level}
+            onChange={(v) => patch({ level: v as Settings["level"] })}
+            options={[
+              { value: "plain", label: "Plain language · explain chess terms" },
+              {
+                value: "standard",
+                label: "Standard · familiar with the basics",
+              },
+              {
+                value: "advanced",
+                label: "Detailed · variations and strategy",
+              },
+            ]}
+          />
+        </section>
+        <section className="settings-section">
+          <div className="section-title">
+            <KeyRound />
+            <div>
+              <h2>Your AI connection</h2>
+              <p>Keys stay on the server.</p>
+            </div>
+          </div>
+          {error && <div className="error">{error}</div>}
+          <div className="model-list">
+            {config.models.map((m) => (
+              <div key={m.id}>
+                <div>
+                  <strong>
+                    {m.id === "claude"
+                      ? "Claude"
+                      : m.id === "google"
+                        ? "Gemini"
+                        : "OpenAI"}
+                  </strong>
+                  <span>{m.name}</span>
+                </div>
+                <span className={"pill " + (m.ready ? "positive" : "")}>
+                  {m.ready ? "Configured" : "Needs API key"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="small muted">
+            Add ANTHROPIC_API_KEY and APP_PASSWORD in your Vercel project, then
+            redeploy. ANTHROPIC_MODEL selects the Claude model. Never paste an
+            API key into chat.
+          </p>
+          <Choice
+            label="Coach model"
+            value={s.provider}
+            onChange={(v) => patch({ provider: v as Settings["provider"] })}
+            options={[
+              { value: "claude", label: "Claude" },
+              { value: "openai", label: "OpenAI" },
+              { value: "google", label: "Gemini" },
+            ]}
+          />
+          {config.passwordRequired && !config.unlocked && (
+            <form
+              className="unlock-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setUnlocking(true);
+                try {
+                  await post("session", { password });
+                  setPassword("");
+                  await refresh();
+                  toast.success("AI unlocked on this device.");
+                } catch (e) {
+                  toast.error(String(e));
+                } finally {
+                  setUnlocking(false);
+                }
+              }}
+            >
+              <label className="field">
+                <span>Personal app password</span>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </label>
+              <Button disabled={unlocking || !password}>
+                {unlocking ? (
+                  <Busy>Unlocking</Busy>
+                ) : (
+                  <>
+                    <KeyRound />
+                    Unlock AI
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
+          {config.unlocked && (
+            <p className="positive small">
+              <ShieldCheck size={15} />
+              This device is unlocked.
+            </p>
+          )}
+          <Button variant="secondary" onClick={() => void refresh()}>
+            Refresh connection
+          </Button>
+          <div className="usage">
+            <strong>
+              {state.usage.date === today() ? state.usage.calls : 0} /{" "}
+              {s.dailyLimit}
+            </strong>
+            <span>AI requests today</span>
+            <small>
+              {state.usage.input.toLocaleString()} input ·{" "}
+              {state.usage.output.toLocaleString()} output tokens
+            </small>
+          </div>
+          <label className="field">
+            <span>Daily AI call limit</span>
+            <Input
+              type="number"
+              min={1}
+              max={200}
+              value={s.dailyLimit}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (n >= 1 && n <= 200) patch({ dailyLimit: n });
+              }}
+            />
+          </label>
+          <p className="small muted">
+            This device’s limit is a spending reminder. Set a provider budget
+            for a hard account-wide cap.
+          </p>
+        </section>
+        <section className="settings-section">
+          <div className="section-title">
+            <ScanSearch />
+            <div>
+              <h2>Analysis</h2>
+              <p>Stockfish runs on your device.</p>
+            </div>
+          </div>
+          <Choice
+            label="Analysis time per position"
+            value={String(s.analysisMs)}
+            onChange={(v) => patch({ analysisMs: Number(v) })}
+            options={[
+              { value: "250", label: "Quick · 0.25 seconds" },
+              { value: "450", label: "Balanced · 0.45 seconds" },
+              { value: "1000", label: "Deeper · 1 second" },
+              { value: "2500", label: "Patient · 2.5 seconds" },
+            ]}
+          />
+          <div className="switch-row">
+            <div>
+              <strong>Show evaluation bar</strong>
+              <p>Visible after analysing a position.</p>
+            </div>
+            <Switch
+              aria-label="Show evaluation bar"
+              checked={s.showEval}
+              onCheckedChange={(v) => patch({ showEval: v })}
+            />
+          </div>
+          <p className="small muted">
+            Engine analysis and coaching are disabled during games against an
+            LLM. Play from either side on an analysis board.
+          </p>
+        </section>
+        <section className="settings-section">
+          <div className="section-title">
+            <Download />
+            <div>
+              <h2>Keep your progress</h2>
+              <p>Games, chats, puzzles and practice live on this device.</p>
+            </div>
+          </div>
+          <p className="muted">
+            Export a backup before clearing browser data or moving to another
+            device.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              download(
+                "greenroom-backup.json",
+                JSON.stringify(state, null, 2),
+                "application/json",
+              )
+            }
+          >
+            <Download />
+            Export full backup
+          </Button>
+          <label className="field">
+            <span>Restore a backup</span>
+            <Input
+              type="file"
+              accept=".json"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                try {
+                  setBackup(parseBackup(await f.text()));
+                } catch {
+                  toast.error("This is not a valid Greenroom backup.");
+                }
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <p className="small muted">
+            No account or database is required. Device-to-device sync can be
+            added later.
+          </p>
+        </section>
+      </div>
+      <AlertDialog
+        open={Boolean(backup)}
+        onOpenChange={(v) => {
+          if (!v) setBackup(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore this workspace?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This replaces the games and progress on this device with{" "}
+              {backup?.games.length} saved games. Export your current workspace
+              first if you want to keep it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (backup) setState(backup);
+                setBackup(null);
+                toast.success("Workspace restored.");
+              }}
+            >
+              Restore backup
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

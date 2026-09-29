@@ -1,7 +1,80 @@
-import {board,move,uci} from './chess';
-import {engine} from './engine';
-import type {Game,ReviewMove,Analysis} from './types';
-export function loss(before:Analysis,after:Analysis,color:'w'|'b'){return Math.max(0,((before.lines[0]?.cp||0)-(after.lines[0]?.cp||0))*(color==='w'?1:-1));}
-export function category(v:number):ReviewMove['category']{return v<15?'best':v<60?'good':v<120?'inaccuracy':v<250?'mistake':'blunder';}
-export async function reviewGame(g:Game,ms:number,signal:AbortSignal,onProgress:(n:number)=>void){const b=board(g,0);const rows:ReviewMove[]=[];for(let i=0;i<g.moves.length;i++){signal.throwIfAborted();const color=b.turn();const before=await engine.analyze(b.fen(),ms,3,signal);const m=move(b,g.moves[i]);const after=b.isGameOver()?{fen:b.fen(),lines:[{move:'',pv:[],cp:b.isCheckmate()?(b.turn()==='w'?-100000:100000):0,depth:0}]}:await engine.analyze(b.fen(),ms,3,signal);const delta=loss(before,after,color);rows.push({ply:i,san:m.san,loss:delta,category:category(delta),before,after});onProgress(i+1);}return rows;}
-export function localHint(a:Analysis,detail:number){const line=a.lines[0];if(!line)return 'This position has ended. Try a new game or review an earlier move.';const b=board({initialFen:a.fen,moves:[]});const m=move(b,line.move);if(detail===1)return 'Pause for a moment. What changed with the last move? Check for checks, captures, and threats before choosing your plan.';if(detail===2)return m.captured?'Look closely at the captures available. Can you win material without allowing a stronger reply?':m.san.includes('+')?'A forcing move may help. Which checks make your opponent respond?':'Look for a move that improves an active piece while keeping your own pieces safe.';if(detail===3)return `Look at your ${m.piece==='n'?'knight':({p:'pawn',b:'bishop',r:'rook',q:'queen',k:'king'} as Record<string,string>)[m.piece]} on ${m.from}. Where could it be more useful?`;if(detail===4)return `Consider moving from ${m.from} to ${m.to}. What is your opponent’s strongest reply?`;return `Stockfish suggests ${m.san}. Explore the continuation on the board, then compare your opponent’s replies. A short engine search is evidence, not a complete explanation.`;}
+import { board, move, uci } from "./chess";
+import { engine } from "./engine";
+import type { Game, ReviewMove, Analysis } from "./types";
+export function loss(before: Analysis, after: Analysis, color: "w" | "b") {
+  return Math.max(
+    0,
+    ((before.lines[0]?.cp || 0) - (after.lines[0]?.cp || 0)) *
+      (color === "w" ? 1 : -1),
+  );
+}
+export function category(v: number): ReviewMove["category"] {
+  return v < 15
+    ? "best"
+    : v < 60
+      ? "good"
+      : v < 120
+        ? "inaccuracy"
+        : v < 250
+          ? "mistake"
+          : "blunder";
+}
+export async function reviewGame(
+  g: Game,
+  ms: number,
+  signal: AbortSignal,
+  onProgress: (n: number) => void,
+) {
+  const b = board(g, 0);
+  const rows: ReviewMove[] = [];
+  for (let i = 0; i < g.moves.length; i++) {
+    signal.throwIfAborted();
+    const color = b.turn();
+    const before = await engine.analyze(b.fen(), ms, 3, signal);
+    const m = move(b, g.moves[i]);
+    const after = b.isGameOver()
+      ? {
+          fen: b.fen(),
+          lines: [
+            {
+              move: "",
+              pv: [],
+              cp: b.isCheckmate() ? (b.turn() === "w" ? -100000 : 100000) : 0,
+              depth: 0,
+            },
+          ],
+        }
+      : await engine.analyze(b.fen(), ms, 3, signal);
+    const delta = loss(before, after, color);
+    rows.push({
+      ply: i,
+      san: m.san,
+      loss: delta,
+      category: category(delta),
+      before,
+      after,
+    });
+    onProgress(i + 1);
+  }
+  return rows;
+}
+export function localHint(a: Analysis, detail: number) {
+  const line = a.lines[0];
+  if (!line)
+    return "This position has ended. Try a new game or review an earlier move.";
+  const b = board({ initialFen: a.fen, moves: [] });
+  const m = move(b, line.move);
+  if (detail === 1)
+    return "Pause for a moment. What changed with the last move? Check for checks, captures, and threats before choosing your plan.";
+  if (detail === 2)
+    return m.captured
+      ? "Look closely at the captures available. Can you win material without allowing a stronger reply?"
+      : m.san.includes("+")
+        ? "A forcing move may help. Which checks make your opponent respond?"
+        : "Look for a move that improves an active piece while keeping your own pieces safe.";
+  if (detail === 3)
+    return `Look at your ${m.piece === "n" ? "knight" : ({ p: "pawn", b: "bishop", r: "rook", q: "queen", k: "king" } as Record<string, string>)[m.piece]} on ${m.from}. Where could it be more useful?`;
+  if (detail === 4)
+    return `Consider moving from ${m.from} to ${m.to}. What is your opponent’s strongest reply?`;
+  return `Stockfish suggests ${m.san}. Explore the continuation on the board, then compare your opponent’s replies. A short engine search is evidence, not a complete explanation.`;
+}
