@@ -8,7 +8,9 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "check": "npm test && npm run build",
-    "format": "prettier --write src server api tests"
+    "format": "prettier --write src server api tests",
+    "postinstall": "node scripts/copy-engine.mjs",
+    "prepare:engine": "node scripts/copy-engine.mjs"
   },
   "keywords": [],
   "author": "",
@@ -45,7 +47,7 @@
     "@vercel/node": "^16.0.2",
     "@vitejs/plugin-react": "^6.1.1",
     "prettier": "^3.9.9",
-    "stockfish": "^19.0.0",
+    "stockfish": "19.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",

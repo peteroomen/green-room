@@ -1,0 +1,3 @@
+import type {VercelRequest,VercelResponse} from '@vercel/node';
+import {handle} from '../server/handlers';
+export default function handler(req:VercelRequest,res:VercelResponse){return handle('session',req,res);}
