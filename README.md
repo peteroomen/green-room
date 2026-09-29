@@ -45,7 +45,7 @@ Set these server environment variables for the deployment environments you use, 
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key |
 | `APP_PASSWORD` | A long personal password; unlock AI in the app's Settings |
-| `ANTHROPIC_MODEL` | Optional; defaults to `claude-sonnet-5` |
+| `ANTHROPIC_MODEL` | Optional; defaults to `claude-sonnet-5-5` |
 | `OPENAI_API_KEY` + `OPENAI_MODEL` | Optional OpenAI adapter |
 | `GOOGLE_GENERATIVE_AI_API_KEY` + `GOOGLE_MODEL` | Optional Gemini adapter |
 

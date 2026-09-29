@@ -6,7 +6,7 @@ export function models() {
   return [
     {
       id: "claude" as const,
-      name: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
+      name: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
       ready: Boolean(process.env.ANTHROPIC_API_KEY),
     },
     {
@@ -28,7 +28,7 @@ export function model(id: Provider) {
     throw Error("This model is not configured. Add its API key in Vercel.");
   if (id === "claude")
     return createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })(
-      process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
+      process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
     );
   if (id === "openai")
     return createOpenAI({ apiKey: process.env.OPENAI_API_KEY })(
